@@ -1,0 +1,356 @@
+Name: Promotion pipeline (Dev → QA → Prod)
+
+trigger:
+  branches:
+    include:
+      - main
+
+pool:
+  vmImage: ubuntu-latest
+
+stages:
+# Validation Stage
+- stage: init Validate
+  displayName: Terraform Validation
+  jobs:
+    - job: Validation
+
+      steps:
+        - task: TerraformInstaller@1
+          inputs:
+            terraformVersion: latest
+
+        - script: |
+            terraform fmt -check -recursive
+          workingDirectory: $(workdir)
+          displayName: Terraform FMT
+
+        - script: |
+            terraform init -backend=false
+            terraform validate
+          workingDirectory: $(workdir)
+          displayName: Terraform Validate
+
+# Security Scanning Stage
+- stage: SecurityScanning
+  displayName: Security Scanning
+  dependsOn: Validate
+  jobs:
+    - job: TerraformSecurityScan
+
+      steps:
+
+        # - script: |
+        #     tflint
+        #   workingDirectory: $(workdir)
+        #   displayName: TFLint
+
+        - script: |
+            tfsec .
+          workingDirectory: $(System.DefaultWorkingDirectory)
+          displayName: TFSec
+
+        - script: |
+            checkov -d .
+          workingDirectory: $(System.DefaultWorkingDirectory)
+          displayName: Checkov
+
+        - script: |
+            gitleaks detect --source .
+          workingDirectory: $(System.DefaultWorkingDirectory)
+          displayName: Gitleaks
+
+        # - script: |
+        #     infracost breakdown --path .
+        #   workingDirectory: $(workdir)
+        #   displayName: Infracost
+
+# DEV Deployment Stage
+- stage: DevDeployment
+  dependsOn: SecurityScanning
+
+  variables:
+    - group: vg-dev-backend
+
+    - name: workdir
+      value: $(System.DefaultWorkingDirectory)/environment/development
+
+    - name: serviceConnection
+      value: development-service-connection
+
+    - name: key
+      value: development.terraform.tfstate
+
+  jobs:
+
+    - job: DevPlan
+
+      steps:
+        - task: AzureCLI@2
+          inputs:
+            azureSubscription: $(serviceConnection)
+            scriptType: bash
+            scriptLocation: inlineScript
+            inlineScript: |
+              terraform init \
+              -backend-config="resource_group_name=$(TF_STATE_RG)" \
+              -backend-config="storage_account_name=$(TF_STATE_STORAGE)" \
+              -backend-config="container_name=$(TF_STATE_CONTAINER)" \
+              -backend-config="key=$(key)"
+
+              terraform plan -out=$(Build.ArtifactStagingDirectory)/dev.tfplan
+          workingDirectory: $(workdir)
+
+        - publish: $(Build.ArtifactStagingDirectory)/dev.tfplan
+          artifact: devtfplan
+
+    - job: DevApply
+      dependsOn: DevPlan
+
+      steps:
+        - download: current
+          artifact: devtfplan
+
+        - task: AzureCLI@2
+          inputs:
+            azureSubscription: $(serviceConnection)
+            scriptType: bash
+            scriptLocation: inlineScript
+            inlineScript: |
+              terraform apply -auto-approve \
+              $(Pipeline.Workspace)/devtfplan/dev.tfplan
+          workingDirectory: $(workdir)
+
+# QA Deployment Stage
+- stage: QaDeployment
+  displayName: QA Deployment
+  dependsOn: DevDeployment
+
+  variables:
+    - group: vg-qa-backend
+
+    - name: workdir
+      value: $(System.DefaultWorkingDirectory)/environment/quality
+
+    - name: serviceConnection
+      value: quality-service-connection
+
+    - name: key
+      value: quality.terraform.tfstate
+
+  jobs:
+    - job: QaApproval
+      pool: server
+
+      steps:
+        - task: ManualValidation@0
+          inputs:
+            notifyUsers: |
+              amitkkc01@gmail.com
+            instructions: |
+              Approve QA Deployment
+
+    - job: Plan
+      steps:
+        - task: AzureCLI@2
+          displayName: Terraform Init
+          inputs:
+            azureSubscription: $(serviceConnection)
+            scriptType: bash
+            scriptLocation: inlineScript
+            inlineScript: |
+              terraform init \
+                -backend-config="resource_group_name=$(TF_STATE_RG)" \
+                -backend-config="storage_account_name=$(TF_STATE_STORAGE)" \
+                -backend-config="container_name=$(TF_STATE_CONTAINER)" \
+                -backend-config="key=$(key)"
+          workingDirectory: $(workdir)
+
+        - script: |
+            terraform plan \
+              -out=$(Build.ArtifactStagingDirectory)/${{ parameters.environment }}.tfplan
+          workingDirectory: $(workdir)
+          displayName: Terraform Plan
+
+        - publish: $(workdir)/tfplan
+          artifact: qatfplan
+          displayName: Publish Plan
+
+    - job: ManualApproval
+      pool: server
+      steps:
+        - task: ManualValidation@0
+          timeoutInMinutes: 1440
+          inputs:
+            notifyUsers: |
+              amitkkc01@gmail.com
+            instructions: |
+              Please review the Terraform Plan output.
+              Approve to continue QA deployment.
+            onTimeout: reject
+
+    - job: TerraformApply
+      steps:
+
+        - download: current
+          artifact: qatfplan
+
+        - task: AzureCLI@2
+          displayName: Terraform Init
+          inputs:
+            azureSubscription: $(serviceConnection)
+            scriptType: bash
+            scriptLocation: inlineScript
+            inlineScript: |
+              terraform init \
+                -backend-config="resource_group_name=$(TF_STATE_RG)" \
+                -backend-config="storage_account_name=$(TF_STATE_STORAGE)" \
+                -backend-config="container_name=$(TF_STATE_CONTAINER)" \
+                -backend-config="key=$(key)"
+          workingDirectory: $(workdir)
+
+        - task: AzureCLI@2
+          displayName: Terraform Apply
+          inputs:
+            azureSubscription: $(serviceConnection)
+            scriptType: bash
+            scriptLocation: inlineScript
+            inlineScript: |
+              terraform apply -auto-approve $(Pipeline.Workspace)/qatfplan/qatfplan
+          workingDirectory: $(workdir)
+
+    - job: Validation
+      steps:
+        - task: AzureCLI@2
+          displayName: Terraform Output
+          inputs:
+            azureSubscription: $(serviceConnection)
+            scriptType: bash
+            scriptLocation: inlineScript
+            inlineScript: |
+              terraform init \
+                -backend-config="resource_group_name=$(TF_STATE_RG)" \
+                -backend-config="storage_account_name=$(TF_STATE_STORAGE)" \
+                -backend-config="container_name=$(TF_STATE_CONTAINER)" \
+                -backend-config="key=$(key)"
+
+              terraform output
+          workingDirectory: $(workdir)
+
+# PROD Deployment Stage
+- stage: ProdDeployment
+  displayName: Production Deployment
+  dependsOn: QaDeployment
+
+  variables:
+    - group: vg-prod-backend
+
+    - name: workdir
+      value: $(System.DefaultWorkingDirectory)/environment/production
+
+    - name: serviceConnection
+      value: production-service-connection
+
+    - name: key
+      value: production.terraform.tfstate
+
+  jobs:
+    - job: ProdApproval
+      pool: server
+
+      steps:
+        - task: ManualValidation@0
+          inputs:
+            notifyUsers: |
+              amitkkc01@gmail.com
+            instructions: |
+              Approve Production Deployment
+
+    - job: ProdPlan
+      dependsOn: ProdApproval
+      steps:
+
+        - task: AzureCLI@2
+          displayName: Terraform Init
+          inputs:
+            azureSubscription: $(serviceConnection)
+            scriptType: bash
+            scriptLocation: inlineScript
+            inlineScript: |
+              terraform init \
+                -backend-config="resource_group_name=$(TF_STATE_RG)" \
+                -backend-config="storage_account_name=$(TF_STATE_STORAGE)" \
+                -backend-config="container_name=$(TF_STATE_CONTAINER)" \
+                -backend-config="key=$(key)"
+          workingDirectory: $(workdir)
+
+        - script: |
+            terraform plan \
+              -out=$(Build.ArtifactStagingDirectory)/${{ parameters.environment }}.tfplan
+          workingDirectory: $(workdir)
+          displayName: Terraform Plan
+
+        - publish: $(workdir)/tfplan
+          artifact: prodtfplan
+          displayName: Publish Plan
+
+    - job: ManualApproval
+      dependsOn: ProdPlan
+      pool: server
+      steps:
+        - task: ManualValidation@0
+          timeoutInMinutes: 1440
+          inputs:
+            notifyUsers: |
+              amitkkc01@gmail.com
+            instructions: |
+              Please review the Terraform Plan output.
+              Approve to continue QA deployment.
+            onTimeout: reject
+
+    - job: ProdApply
+      dependsOn: ManualApproval
+      steps:
+        - download: current
+          artifact: prodtfplan
+
+        - task: AzureCLI@2
+          displayName: Terraform Init
+          inputs:
+            azureSubscription: $(serviceConnection)
+            scriptType: bash
+            scriptLocation: inlineScript
+            inlineScript: |
+              terraform init \
+                -backend-config="resource_group_name=$(TF_STATE_RG)" \
+                -backend-config="storage_account_name=$(TF_STATE_STORAGE)" \
+                -backend-config="container_name=$(TF_STATE_CONTAINER)" \
+                -backend-config="key=$(key)"
+          workingDirectory: $(workdir)
+
+        - task: AzureCLI@2
+          displayName: Terraform Apply
+          inputs:
+            azureSubscription: $(serviceConnection)
+            scriptType: bash
+            scriptLocation: inlineScript
+            inlineScript: |
+              terraform apply -auto-approve $(Pipeline.Workspace)/prodtfplan/prodtfplan
+          workingDirectory: $(workdir)
+
+
+# # MONITORING
+# - stage: Monitoring
+#   dependsOn: ProdApply
+#   jobs:
+#     - job: Monitoring
+#       steps:
+#         - script: echo "Azure Monitor Checks"
+
+# # DRIFT DETECTION
+# - stage: DriftDetection
+#   dependsOn: Monitoring
+#   jobs:
+#     - job: Drift
+#       steps:
+#         - script: terraform plan -refresh-only

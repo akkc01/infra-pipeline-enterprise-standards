@@ -1,3 +1,5 @@
+Name: PR Pipeline
+
 trigger: none
 
 pr:
@@ -8,69 +10,59 @@ pr:
 pool:
   vmImage: ubuntu-latest
 
-variables:
-  workingDirectory: 'environment'
 
 stages:
-
 # Validation Stage
 - stage: Validate
   displayName: Terraform Validation
-
   jobs:
     - job: Validation
-
       steps:
         - task: TerraformInstaller@1
           inputs:
             terraformVersion: latest
 
         - script: |
-            terraform init -backend=false
-          workingDirectory: $(workingDirectory)
-          displayName: Terraform Init
-
-        - script: |
             terraform fmt -check -recursive
-          workingDirectory: $(workingDirectory)
+          workingDirectory: $(System.DefaultWorkingDirectory)
           displayName: Terraform FMT
 
         - script: |
+            terraform init -backend=false
             terraform validate
-          workingDirectory: $(workingDirectory)
+          workingDirectory: $(System.DefaultWorkingDirectory)
           displayName: Terraform Validate
 
 # Security Scanning Stage
 - stage: SecurityScanning
   displayName: Security Scanning
   dependsOn: Validate
-
   jobs:
     - job: TerraformSecurityScan
 
       steps:
 
-        - script: |
-            tflint
-          workingDirectory: $(workingDirectory)
-          displayName: TFLint
+        # - script: |
+        #     tflint
+        #   workingDirectory: $(workdir)
+        #   displayName: TFLint
 
         - script: |
             tfsec .
-          workingDirectory: $(workingDirectory)
+          workingDirectory: $(System.DefaultWorkingDirectory)
           displayName: TFSec
 
         - script: |
             checkov -d .
-          workingDirectory: $(workingDirectory)
+          workingDirectory: $(System.DefaultWorkingDirectory)
           displayName: Checkov
 
         - script: |
             gitleaks detect --source .
-          workingDirectory: $(workingDirectory)
+          workingDirectory: $(System.DefaultWorkingDirectory)
           displayName: Gitleaks
 
-        - script: |
-            infracost breakdown --path .
-          workingDirectory: $(workingDirectory)
-          displayName: Infracost
+        # - script: |
+        #     infracost breakdown --path .
+        #   workingDirectory: $(workdir)
+        #   displayName: Infracost

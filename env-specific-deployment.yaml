@@ -1,0 +1,244 @@
+Name: Parameter-based single environment deployment
+
+parameters:
+  - name: environment
+    displayName: Select your Environment to deploy Infrastructure
+    type: string
+    default: development
+    values:
+      - development
+      - quality
+      - production
+
+variables:
+  - name: workdir
+    value: $(System.DefaultWorkingDirectory)/environment/${{ parameters.environment }}
+
+  # Backend Configuration Variables, these are set in variable groups for each environment
+  - name: key
+    value: ${{ parameters.environment }}.terraform.tfstate
+
+  - ${{ if eq(parameters.environment, 'development') }}:
+      - group: vg-dev-backend
+
+  - ${{ if eq(parameters.environment, 'quality') }}:
+      - group: vg-qa-backend
+
+  - ${{ if eq(parameters.environment, 'production') }}:
+      - group: vg-prod-backend
+
+  - name: serviceConnection
+    value: ${{ parameters.environment }}-service-connection
+
+
+trigger:
+  branches:
+    include:
+      - main
+
+pool:
+  vmImage: ubuntu-latest
+
+stages:
+
+# Validation Stage
+- stage: Validate
+  displayName: Terraform Validation
+
+  jobs:
+    - job: Validation
+
+      steps:
+        - task: TerraformInstaller@1
+          inputs:
+            terraformVersion: latest
+
+        - task: AzureCLI@2
+          displayName: Terraform Init
+          inputs:
+            azureSubscription: $(serviceConnection)
+            scriptType: bash
+            scriptLocation: inlineScript
+            inlineScript: |
+              terraform init \
+                -backend-config="resource_group_name=$(TF_STATE_RG)" \
+                -backend-config="storage_account_name=$(TF_STATE_STORAGE)" \
+                -backend-config="container_name=$(TF_STATE_CONTAINER)" \
+                -backend-config="key=$(key)"
+          workingDirectory: $(workdir)
+
+        - script: |
+            terraform fmt -check -recursive
+          workingDirectory: $(workdir)
+          displayName: Terraform FMT
+
+        - script: |
+            terraform validate
+          workingDirectory: $(workdir)
+          displayName: Terraform Validate
+
+# Security Scanning Stage
+- stage: SecurityScanning
+  displayName: Security Scanning
+  dependsOn: Validate
+
+  jobs:
+    - job: TerraformSecurityScan
+
+      steps:
+
+        - script: |
+            tflint
+          workingDirectory: $(workdir)
+          displayName: TFLint
+
+        - script: |
+            tfsec .
+          workingDirectory: $(workdir)
+          displayName: TFSec
+
+        - script: |
+            checkov -d .
+          workingDirectory: $(workdir)
+          displayName: Checkov
+
+        - script: |
+            gitleaks detect --source .
+          workingDirectory: $(workdir)
+          displayName: Gitleaks
+
+        - script: |
+            infracost breakdown --path .
+          workingDirectory: $(workdir)
+          displayName: Infracost
+
+# Plan Stage
+- stage: Plan
+  dependsOn: SecurityScanning
+  jobs:
+    - job: Plan
+      steps:
+
+        - task: AzureCLI@2
+          displayName: Terraform Init
+          inputs:
+            azureSubscription: $(serviceConnection)
+            scriptType: bash
+            scriptLocation: inlineScript
+            inlineScript: |
+              terraform init \
+                -backend-config="resource_group_name=$(TF_STATE_RG)" \
+                -backend-config="storage_account_name=$(TF_STATE_STORAGE)" \
+                -backend-config="container_name=$(TF_STATE_CONTAINER)" \
+                -backend-config="key=$(key)"
+          workingDirectory: $(workdir)
+
+        - script: |
+            terraform plan \
+              -out=$(Build.ArtifactStagingDirectory)/${{ parameters.environment }}.tfplan
+          workingDirectory: $(workdir)
+          displayName: Terraform Plan
+
+        - publish: $(workdir)/tfplan
+          artifact: tfplan
+          displayName: Publish Plan
+
+# Approval Stage
+- stage: Approval
+  displayName: Manual Approval
+  dependsOn: Plan
+
+  condition: |
+    or(
+      eq('${{ parameters.environment }}', 'quality'),
+      eq('${{ parameters.environment }}', 'production')
+    )
+
+  jobs:
+    - job: ManualApproval
+      pool: server
+
+      steps:
+        - task: ManualValidation@0
+          timeoutInMinutes: 1440
+
+          inputs:
+            notifyUsers: |
+              amitkkc01@gmail.com
+
+            instructions: |
+              Please review the Terraform Plan output.
+              Approve to continue deployment.
+
+            onTimeout: reject
+
+# Apply Stage
+- stage: Apply
+  displayName: Terraform Apply
+  dependsOn:
+    - Plan
+    - Approval
+
+  condition: |
+    and(
+      succeeded(),
+      or(
+        eq('${{ parameters.environment }}', 'development'),
+        eq(dependencies.Approval.result, 'Succeeded')
+      )
+    )
+
+  jobs:
+    - job: TerraformApply
+
+      steps:
+
+        - download: current
+          artifact: tfplan
+
+        - task: AzureCLI@2
+          displayName: Terraform Init
+          inputs:
+            azureSubscription: $(serviceConnection)
+            scriptType: bash
+            scriptLocation: inlineScript
+            inlineScript: |
+              terraform init \
+                -backend-config="resource_group_name=$(TF_STATE_RG)" \
+                -backend-config="storage_account_name=$(TF_STATE_STORAGE)" \
+                -backend-config="container_name=$(TF_STATE_CONTAINER)" \
+                -backend-config="key=$(key)"
+          workingDirectory: $(workdir)
+
+        - task: AzureCLI@2
+          displayName: Terraform Apply
+          inputs:
+            azureSubscription: $(serviceConnection)
+            scriptType: bash
+            scriptLocation: inlineScript
+            inlineScript: |
+              terraform apply -auto-approve $(Pipeline.Workspace)/tfplan/tfplan
+          workingDirectory: $(workdir)
+
+# Infrastructure Validation
+- stage: InfraValidation
+  dependsOn: Apply
+  jobs:
+    - job: Validation
+
+      steps:
+        - task: AzureCLI@2
+          displayName: Terraform Output
+          inputs:
+            azureSubscription: $(serviceConnection)
+            scriptType: bash
+            scriptLocation: inlineScript
+            inlineScript: |
+              terraform init \
+                -backend-config="resource_group_name=$(TF_STATE_RG)" \
+                -backend-config="storage_account_name=$(TF_STATE_STORAGE)" \
+                -backend-config="container_name=$(TF_STATE_CONTAINER)" \
+                -backend-config="key=$(key)"
+
+              terraform output
+          workingDirectory: $(workdir)
