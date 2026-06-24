@@ -6,13 +6,9 @@ terraform {
       version = "4.47.0"
     }
   }
-  backend "azurerm" {
-
-  }
 }
 
 provider "azurerm" {
-  features {
-  }
+  features {}
   subscription_id = var.subscription_id
 }

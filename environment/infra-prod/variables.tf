@@ -1,12 +1,12 @@
 variable "subscription_id" {
   description = "this is your subscription id"
-  type = string
+  type        = string
 }
 
 variable "resource_groups" {
   description = "A map of resource groups to create. The key of the map will be used as the resource group identifier."
   type = map(object({
-    name       = string
+    rg_name    = string
     location   = string
     managed_by = optional(string)
     tags       = optional(map(string), {})
@@ -18,9 +18,9 @@ variable "stgaccount" {
   type = map(object({
 
     # Required Arguments
-    name                     = string
+    stg_name                 = string
     location                 = string
-    rg_key                   = string
+    rg_name                  = string
     account_tier             = string
     account_replication_type = string
 
@@ -193,9 +193,9 @@ variable "stgaccount" {
 variable "vnets" {
   description = "All the VNets"
   type = map(object({
-    name          = string
+    vnet_name     = string
     location      = string
-    rg_key        = string
+    rg_name       = string
     address_space = optional(list(string))
     dns_servers   = optional(list(string))
     bgp_community = optional(number)
@@ -246,14 +246,15 @@ variable "subnets" {
   description = "Map of subnet configurations to create."
   type = map(object({
     subnet_name                                   = string
-    virtual_network_name                          = string
+    vnet_name                                     = string
+    rg_name                                       = string
     default_outbound_access_enabled               = optional(bool, true)
     private_endpoint_network_policies             = optional(string, "Disabled")
     private_link_service_network_policies_enabled = optional(bool, true)
     sharing_scope                                 = optional(string)
     service_endpoints                             = optional(list(string))
     service_endpoint_policy_ids                   = optional(list(string))
-    rg_key                                        = string
+
 
     # Either one must be set
     address_prefixes = optional(list(string))
@@ -275,3 +276,31 @@ variable "subnets" {
 
   }))
 }
+
+variable "pips" {
+  description = "Map of public IP configurations"
+  type = map(object({
+    # Required Arguments
+    pip_name          = string
+    location          = string
+    rg_name           = string
+    allocation_method = string
+    # Optional Arguments
+    tags                    = optional(map(string))
+    zones                   = optional(list(string))
+    ddos_protection_mode    = optional(string)
+    ddos_protection_plan_id = optional(string)
+    domain_name_label       = optional(string)
+    domain_name_label_scope = optional(string)
+    edge_zone               = optional(string)
+    idle_timeout_in_minutes = optional(number)
+    ip_tags                 = optional(map(string))
+    ip_version              = optional(string)
+    public_ip_prefix_id     = optional(string)
+    reverse_fqdn            = optional(string)
+    sku                     = optional(string)
+    sku_tier                = optional(string)
+  }))
+  default = {}
+}
+
