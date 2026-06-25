@@ -213,14 +213,3 @@ Cloud & DevOps Engineer
 
 Azure • Terraform • Kubernetes • Azure DevOps • GitHub Actions
 
-Ek suggestion: is README ko aur bhi premium bana sakte hain by adding:
-
-* Architecture diagram
-* Azure DevOps pipeline screenshots
-* Mermaid flowcharts
-* Deployment badges
-* Pipeline status badge
-* Terraform module dependency graph
-* GIF showing end-to-end pipeline execution
-
-Ye additions repository ko portfolio-level showcase bana denge.
