@@ -1,7 +1,5 @@
 name: Parameter-based single environment deployment
 
-# single-env-deploy-templates, manual-approval, infra-validation, security-scan, terraform-apply, terraform-plan, validate
-
 parameters:
   - name: environment
     type: string
