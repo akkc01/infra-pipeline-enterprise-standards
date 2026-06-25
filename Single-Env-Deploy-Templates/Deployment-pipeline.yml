@@ -1,1 +1,70 @@
 
+name: Parameter-based single environment deployment
+
+parameters:
+  - name: environment
+    type: string
+    default: development
+    values:
+      - development
+      - quality
+      - production
+
+variables:
+  - name: workdir
+    value: $(System.DefaultWorkingDirectory)/environment/${{ parameters.environment }}
+
+  - name: key
+    value: ${{ parameters.environment }}.terraform.tfstate
+
+  - ${{ if eq(parameters.environment,'development') }}:
+      - group: vg-dev-backend
+
+  - ${{ if eq(parameters.environment,'quality') }}:
+      - group: vg-qa-backend
+
+  - ${{ if eq(parameters.environment,'production') }}:
+      - group: vg-prod-backend
+
+  - name: serviceConnection
+    value: ${{ parameters.environment }}-service-connection
+
+trigger:
+  branches:
+    include:
+      - main
+
+pool:
+  vmImage: ubuntu-latest
+
+stages:
+
+- template: templates/validate.yml
+  parameters:
+    workdir: $(workdir)
+    serviceConnection: $(serviceConnection)
+
+- template: templates/security-scan.yml
+  parameters:
+    workdir: $(workdir)
+
+- template: templates/terraform-plan.yml
+  parameters:
+    workdir: $(workdir)
+    environment: ${{ parameters.environment }}
+    serviceConnection: $(serviceConnection)
+
+- template: templates/manual-approval.yml
+  parameters:
+    environment: ${{ parameters.environment }}
+
+- template: templates/terraform-apply.yml
+  parameters:
+    workdir: $(workdir)
+    environment: ${{ parameters.environment }}
+    serviceConnection: $(serviceConnection)
+
+- template: templates/infra-validation.yml
+  parameters:
+    workdir: $(workdir)
+    serviceConnection: $(serviceConnection)
