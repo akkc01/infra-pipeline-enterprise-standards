@@ -8,16 +8,19 @@ trigger:
 pool:
   vmImage: "ubuntu-latest"
 
+# Ensure that all the variable groups are defined in the pipeline and are not empty. If any of the variable groups are empty, the pipeline will fail.
+# Ensure all service connections are created in the Azure DevOps project and are not empty. If any of the service connections are empty, the pipeline will fail.
+# For the manual approval, create environment variables in Azure DevOps for each environment (test-env, prod-env) and assign the appropriate approvers to those environments.
+# This will ensure that the manual approval step is properly configured and will not fail due to missing approvers.
+
 stages:
 
-# ==========================
 # DEV
-# ==========================
 - stage: Dev
   displayName: "Deploy to Dev"
 
   jobs:
-    - template: templates/terraform-initPlan.yml
+    - template: templates/terraform-init-plan.yml
       parameters:
         environment: "dev"
         serviceConnection: "Azure-Dev-ServiceConnection"
@@ -29,42 +32,38 @@ stages:
         serviceConnection: "Azure-Dev-ServiceConnection"
         variable_group: "vg-dev-backend"
 
-# ==========================
 # TEST
-# ==========================
 - stage: Test
   displayName: "Deploy to Test"
   dependsOn: Dev
 
   jobs:
-    - template: templates/terraform-initPlan.yml
+    - template: templates/terraform-init-plan.yml
       parameters:
         environment: "test"
         serviceConnection: "Azure-Test-ServiceConnection"
         variable_group: "vg-test-backend"
 
-    - template: templates/terraform-approvalApply.yml
+    - template: templates/terraform-approval-apply.yml
       parameters:
         environment: "test"
         serviceConnection: "Azure-Test-ServiceConnection"
         variable_group: "vg-test-backend"
         adoEnvironment: "test-env"
 
-# ==========================
 # PROD
-# ==========================
 - stage: Prod
   displayName: "Deploy to Prod"
   dependsOn: Test
 
   jobs:
-    - template: templates/terraform-initPlan.yml
+    - template: templates/terraform-init-plan.yml
       parameters:
         environment: "prod"
         serviceConnection: "Azure-Prod-ServiceConnection"
         variable_group: "vg-prod-backend"
 
-    - template: templates/terraform-approvalApply.yml
+    - template: templates/terraform-approval-apply.yml
       parameters:
         environment: "prod"
         serviceConnection: "Azure-Prod-ServiceConnection"
