@@ -1,1 +1,79 @@
+name: Terraform PR Validation
 
+trigger: none
+
+pr:
+  branches:
+    include:
+      - main
+
+pool:
+  vmImage: ubuntu-latest
+
+parameters:
+  - name: environment
+    type: string
+    default: dev
+    values:
+      - dev
+      - test
+      - prod
+
+variables:
+  workdir: $(System.DefaultWorkingDirectory)/terraform/${{ parameters.environment }}
+
+stages:
+
+# =====================================
+# Terraform Validation
+# =====================================
+- stage: Validation
+  displayName: Terraform Validation
+
+  jobs:
+    - job: Validation
+      displayName: Terraform Validation
+
+      steps:
+        - task: TerraformInstaller@1
+          inputs:
+            terraformVersion: latest
+
+        - script: terraform init -backend=false
+          workingDirectory: $(workdir)
+          displayName: Terraform Init
+
+        - script: terraform fmt -check -recursive
+          workingDirectory: $(workdir)
+          displayName: Terraform FMT
+
+        - script: terraform validate
+          workingDirectory: $(workdir)
+          displayName: Terraform Validate
+
+# =====================================
+# Security Scan
+# =====================================
+- stage: Security
+  displayName: Security Scanning
+  dependsOn: Validation
+
+  jobs:
+    - job: Security
+
+      steps:
+        - script: |
+            curl -s https://raw.githubusercontent.com/terraform-linters/tflint/master/install_linux.sh | bash
+          displayName: Install TFLint
+
+        - script: tflint
+          workingDirectory: $(workdir)
+          displayName: Run TFLint
+
+        - script: |
+            curl -s https://raw.githubusercontent.com/aquasecurity/tfsec/master/scripts/install_linux.sh | bash
+          displayName: Install tfsec
+
+        - script: tfsec .
+          workingDirectory: $(workdir)
+          displayName: Run tfsec
