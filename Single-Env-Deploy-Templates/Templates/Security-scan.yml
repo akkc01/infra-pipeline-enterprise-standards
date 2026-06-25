@@ -1,1 +1,29 @@
+parameters:
+  workdir: ""
 
+stages:
+
+- stage: SecurityScanning
+
+  dependsOn: Validate
+
+  jobs:
+
+  - job: Scan
+
+    steps:
+
+    - script: tflint
+      workingDirectory: ${{ parameters.workdir }}
+
+    - script: tfsec .
+      workingDirectory: ${{ parameters.workdir }}
+
+    - script: checkov -d .
+      workingDirectory: ${{ parameters.workdir }}
+
+    - script: gitleaks detect --source .
+      workingDirectory: ${{ parameters.workdir }}
+
+    - script: infracost breakdown --path .
+      workingDirectory: ${{ parameters.workdir }}
