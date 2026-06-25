@@ -1,1 +1,30 @@
+parameters:
+  workdir: ""
+  serviceConnection: ""
 
+stages:
+
+- stage: InfraValidation
+
+  dependsOn: Apply
+
+  jobs:
+
+  - job: Validation
+
+    steps:
+
+    - template: common/terraform-init.yml
+      parameters:
+        workdir: ${{ parameters.workdir }}
+        serviceConnection: ${{ parameters.serviceConnection }}
+
+    - task: AzureCLI@2
+      displayName: Terraform Output
+      inputs:
+        azureSubscription: ${{ parameters.serviceConnection }}
+        scriptType: bash
+        scriptLocation: inlineScript
+        inlineScript: |
+          terraform output
+      workingDirectory: ${{ parameters.workdir }}
