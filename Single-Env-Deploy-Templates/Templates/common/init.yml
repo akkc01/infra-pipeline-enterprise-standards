@@ -1,1 +1,19 @@
+parameters:
+  serviceConnection: ""
+  workdir: ""
 
+steps:
+
+- task: AzureCLI@2
+  displayName: Terraform Init
+  inputs:
+    azureSubscription: ${{ parameters.serviceConnection }}
+    scriptType: bash
+    scriptLocation: inlineScript
+    inlineScript: |
+      terraform init \
+        -backend-config="resource_group_name=$(TF_STATE_RG)" \
+        -backend-config="storage_account_name=$(TF_STATE_STORAGE)" \
+        -backend-config="container_name=$(TF_STATE_CONTAINER)" \
+        -backend-config="key=$(key)"
+  workingDirectory: ${{ parameters.workdir }}
