@@ -1,1 +1,29 @@
+parameters:
+  workdir: ""
+  serviceConnection: ""
+  environment: ""
 
+stages:
+
+- stage: Plan
+
+  dependsOn: SecurityScanning
+
+  jobs:
+
+  - job: Plan
+
+    steps:
+
+    - template: common/terraform-init.yml
+      parameters:
+        workdir: ${{ parameters.workdir }}
+        serviceConnection: ${{ parameters.serviceConnection }}
+
+    - script: |
+        terraform plan \
+        -out=$(Build.ArtifactStagingDirectory)/${{ parameters.environment }}.tfplan
+      workingDirectory: ${{ parameters.workdir }}
+
+    - publish: $(Build.ArtifactStagingDirectory)/${{ parameters.environment }}.tfplan
+      artifact: tfplan
