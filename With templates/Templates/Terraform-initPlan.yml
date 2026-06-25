@@ -1,1 +1,50 @@
+parameters:
+  - name: environment
+    type: string
 
+  - name: serviceConnection
+    type: string
+
+  - name: variable_group
+    type: string
+
+jobs:
+  - job: Terraform_${{ parameters.environment }}
+    displayName: "Terraform Plan - ${{ parameters.environment }}"
+
+    variables:
+      - group: ${{ parameters.variable_group }}
+
+    steps:
+      - task: TerraformInstaller@1
+        displayName: "Install Terraform"
+        inputs:
+          terraformVersion: "1.5.0"
+
+      - task: TerraformTaskV4@4
+        displayName: "Terraform Init"
+        inputs:
+          provider: "azurerm"
+          command: "init"
+          workingDirectory: "$(System.DefaultWorkingDirectory)/terraform/${{ parameters.environment }}"
+          backendServiceArm: ${{ parameters.serviceConnection }}
+          backendAzureRmResourceGroupName: "$(tf_backend_rg)"
+          backendAzureRmStorageAccountName: "$(tf_backend_sa)"
+          backendAzureRmContainerName: "$(tf_backend_container)"
+          backendAzureRmKey: "${{ parameters.environment }}.tfstate"
+
+      - task: TerraformTaskV4@4
+        displayName: "Terraform Plan"
+        inputs:
+          provider: "azurerm"
+          command: "plan"
+          workingDirectory: "$(System.DefaultWorkingDirectory)/terraform/${{ parameters.environment }}"
+          environmentServiceNameAzureRM: ${{ parameters.serviceConnection }}
+          commandOptions: "-out=tfplan"
+
+      - task: PublishBuildArtifacts@1
+        displayName: "Publish Terraform Plan"
+        inputs:
+          PathtoPublish: "$(System.DefaultWorkingDirectory)/terraform/${{ parameters.environment }}/tfplan"
+          ArtifactName: "tfplan-${{ parameters.environment }}"
+          publishLocation: "Container"
