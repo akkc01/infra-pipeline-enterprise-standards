@@ -156,7 +156,7 @@ stages:
 
         - script: |
             terraform plan \
-              -out=$(Build.ArtifactStagingDirectory)/${{ parameters.environment }}.tfplan
+              -out=$(Build.ArtifactStagingDirectory)/qa.tfplan
           workingDirectory: $(workdir)
           displayName: Terraform Plan
 
@@ -262,7 +262,7 @@ stages:
 
         - script: |
             terraform plan \
-              -out=$(Build.ArtifactStagingDirectory)/${{ parameters.environment }}.tfplan
+              -out=$(Build.ArtifactStagingDirectory)/prod.tfplan
           workingDirectory: $(workdir)
           displayName: Terraform Plan
 
