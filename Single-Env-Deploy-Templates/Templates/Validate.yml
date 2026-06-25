@@ -1,1 +1,28 @@
+parameters:
+  workdir: ""
+  serviceConnection: ""
 
+stages:
+
+- stage: Validate
+
+  jobs:
+
+  - job: Validation
+
+    steps:
+
+    - task: TerraformInstaller@1
+      inputs:
+        terraformVersion: latest
+
+    - template: common/terraform-init.yml
+      parameters:
+        workdir: ${{ parameters.workdir }}
+        serviceConnection: ${{ parameters.serviceConnection }}
+
+    - script: terraform fmt -check -recursive
+      workingDirectory: ${{ parameters.workdir }}
+
+    - script: terraform validate
+      workingDirectory: ${{ parameters.workdir }}
