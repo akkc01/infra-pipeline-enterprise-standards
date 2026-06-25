@@ -1,8 +1,4 @@
-Bhai, repository dekhne ki koshish ki, lekin GitHub ka code tree search se access nahi ho pa raha (public search sirf metadata/index dikhata hai, files nahi).  
-
-Lekin hamari pichli conversations ke basis par mujhe tumhare project ka architecture pata hai. Ye README recruiter/client friendly aur enterprise standard ka hoga.
-
-🚀 Enterprise Terraform CI/CD Pipeline using Azure DevOps
+Enterprise Terraform CI/CD Pipeline using Azure DevOps
 
 A production-ready, enterprise-grade Azure DevOps YAML pipeline for provisioning Azure Infrastructure with Terraform using reusable templates, security scanning, environment-based deployments, and approval gates.
 
