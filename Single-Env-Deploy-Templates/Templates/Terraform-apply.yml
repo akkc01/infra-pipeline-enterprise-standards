@@ -1,1 +1,46 @@
+parameters:
+  workdir: ""
+  serviceConnection: ""
+  environment: ""
 
+stages:
+
+- stage: Apply
+
+  dependsOn:
+    - Plan
+    - Approval
+
+  condition: |
+    and(
+      succeeded(),
+      or(
+        eq('${{ parameters.environment }}','development'),
+        eq(dependencies.Approval.result,'Succeeded')
+      )
+    )
+
+  jobs:
+
+  - job: Apply
+
+    steps:
+
+    - download: current
+      artifact: tfplan
+
+    - template: common/terraform-init.yml
+      parameters:
+        workdir: ${{ parameters.workdir }}
+        serviceConnection: ${{ parameters.serviceConnection }}
+
+    - task: AzureCLI@2
+      displayName: Terraform Apply
+      inputs:
+        azureSubscription: ${{ parameters.serviceConnection }}
+        scriptType: bash
+        scriptLocation: inlineScript
+        inlineScript: |
+          terraform apply -auto-approve \
+          $(Pipeline.Workspace)/tfplan/${{ parameters.environment }}.tfplan
+      workingDirectory: ${{ parameters.workdir }}
