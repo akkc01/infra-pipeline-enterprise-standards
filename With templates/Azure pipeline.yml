@@ -1,1 +1,72 @@
+name: "Infra Deployment Pipeline"
 
+trigger:
+  branches:
+    include:
+      - main
+
+pool:
+  vmImage: "ubuntu-latest"
+
+stages:
+
+# ==========================
+# DEV
+# ==========================
+- stage: Dev
+  displayName: "Deploy to Dev"
+
+  jobs:
+    - template: templates/terraform-initPlan.yml
+      parameters:
+        environment: "dev"
+        serviceConnection: "Azure-Dev-ServiceConnection"
+        variable_group: "vg-dev-backend"
+
+    - template: templates/terraform-apply.yml
+      parameters:
+        environment: "dev"
+        serviceConnection: "Azure-Dev-ServiceConnection"
+        variable_group: "vg-dev-backend"
+
+# ==========================
+# TEST
+# ==========================
+- stage: Test
+  displayName: "Deploy to Test"
+  dependsOn: Dev
+
+  jobs:
+    - template: templates/terraform-initPlan.yml
+      parameters:
+        environment: "test"
+        serviceConnection: "Azure-Test-ServiceConnection"
+        variable_group: "vg-test-backend"
+
+    - template: templates/terraform-approvalApply.yml
+      parameters:
+        environment: "test"
+        serviceConnection: "Azure-Test-ServiceConnection"
+        variable_group: "vg-test-backend"
+        adoEnvironment: "test-env"
+
+# ==========================
+# PROD
+# ==========================
+- stage: Prod
+  displayName: "Deploy to Prod"
+  dependsOn: Test
+
+  jobs:
+    - template: templates/terraform-initPlan.yml
+      parameters:
+        environment: "prod"
+        serviceConnection: "Azure-Prod-ServiceConnection"
+        variable_group: "vg-prod-backend"
+
+    - template: templates/terraform-approvalApply.yml
+      parameters:
+        environment: "prod"
+        serviceConnection: "Azure-Prod-ServiceConnection"
+        variable_group: "vg-prod-backend"
+        adoEnvironment: "prod-env"
